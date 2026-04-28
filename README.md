@@ -60,6 +60,7 @@ pnf_viewer.py       Single-file app (Python server + embedded HTML/JS)
 icon.icns           macOS app icon
 build.sh            Build script for standalone .app
 PnF Viewer.spec     PyInstaller spec file
+tools/              Support utilities outside the packaged viewer runtime
 ```
 
 ## License
