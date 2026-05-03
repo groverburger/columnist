@@ -12,21 +12,19 @@ if [ ! -d "$VENV" ]; then
 fi
 
 source "$VENV/bin/activate"
+PYTHON="$VENV/bin/python"
 
 echo "Installing dependencies..."
-pip install --quiet pyinstaller yfinance pywebview
+"$PYTHON" -m pip install --quiet --upgrade pip
+"$PYTHON" -m pip install --quiet pyinstaller yfinance pywebview
 
-echo "Building PnF Viewer.app..."
-pyinstaller -y --windowed \
-    --name "PnF Viewer" \
-    --icon icon.icns \
-    --hidden-import=webview \
-    --hidden-import=yfinance \
-    --hidden-import=pandas \
-    --hidden-import=requests \
-    --hidden-import=certifi \
-    pnf_viewer.py
+echo "Building Columnist..."
+"$PYTHON" -m PyInstaller -y "Columnist.spec"
 
 echo ""
-echo "Build complete: dist/PnF Viewer.app"
-echo "To install: cp -r \"dist/PnF Viewer.app\" /Applications/"
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "Build complete: dist/Columnist.app"
+    echo "To install: cp -r \"dist/Columnist.app\" /Applications/"
+else
+    echo "Build complete: dist/Columnist/"
+fi

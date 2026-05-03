@@ -1,5 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+
+app_name = 'Columnist'
+icon = 'icon.icns' if sys.platform == 'darwin' else None
+
 
 a = Analysis(
     ['pnf_viewer.py'],
@@ -21,7 +26,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='PnF Viewer',
+    name=app_name,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -32,7 +37,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['icon.icns'],
+    icon=icon,
 )
 coll = COLLECT(
     exe,
@@ -41,11 +46,13 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='PnF Viewer',
+    name=app_name,
 )
-app = BUNDLE(
-    coll,
-    name='PnF Viewer.app',
-    icon='icon.icns',
-    bundle_identifier=None,
-)
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='Columnist.app',
+        icon='icon.icns',
+        bundle_identifier='com.econlabs.columnist',
+    )

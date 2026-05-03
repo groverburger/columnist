@@ -1,15 +1,21 @@
-# Point and Figure Viewer
+<p align="center">
+  <img src="assets/columnist-logo.png" alt="Columnist" width="700">
+</p>
 
-An interactive Point-and-Figure (PnF) chart viewer for stocks, ETFs, futures, and crypto. Runs as a native macOS window via WebKit or in any browser.
+# Columnist
+
+An interactive Point-and-Figure (PnF) chart viewer for stocks, ETFs, futures, and crypto. Runs as a native desktop window via pywebview or in any browser.
 
 ## Features
 
 - **170+ tickers** organized in a sidebar by category (ETFs, sectors, futures, crypto, stocks)
+- **Custom watchlists** with persistent user-created lists
+- **Daily PnF activity badges** next to symbols after scanning/loading a watchlist
 - **Pan, zoom, and keyboard navigation** on a canvas-rendered PnF chart
 - **Per-box date hover** — hover over any X or O to see when it was added, with same-day boxes highlighted
-- **Per-ticker box size** — each ticker remembers its last-used box size across sessions
+- **Per-ticker settings** — each ticker remembers its last-used box size and reversal count across sessions
 - **Configurable parameters** — box size (0.25%–5%), reversal count (1–5), and date range presets
-- **Standalone macOS app** — builds to a self-contained `.app` bundle via PyInstaller
+- **Standalone desktop builds** — builds for macOS and Windows via PyInstaller
 
 ## Running from source
 
@@ -25,22 +31,52 @@ python pnf_viewer.py --browser   # opens in default browser
 
 ## Building the standalone app
 
+Build on the operating system you want to ship. PyInstaller does not cross-compile
+between macOS and Windows.
+
+### macOS
+
 ```bash
 chmod +x build.sh
 ./build.sh
 ```
 
-Creates a virtual environment, installs build dependencies, and produces `dist/PnF Viewer.app` (~68 MB).
+Creates a virtual environment, installs build dependencies, and produces `dist/Columnist.app` (~68 MB).
 
 ```bash
-cp -r "dist/PnF Viewer.app" /Applications/
+cp -r "dist/Columnist.app" /Applications/
 ```
 
 **Build requirements:**
-- macOS (uses `pywebview` with WebKit and `iconutil` for the app icon)
+- macOS (uses `pywebview` with WebKit)
 - Python 3.10+
 
 No global package installs needed — the build script manages its own venv.
+
+### Windows
+
+Run from PowerShell:
+
+```powershell
+.\build_windows.ps1
+```
+
+Creates a virtual environment, installs build dependencies, and produces
+`dist\Columnist\Columnist.exe`.
+
+**Build requirements:**
+- Windows 10/11
+- Python 3.10+
+- Microsoft Edge WebView2 Runtime, which is normally already installed on modern Windows
+
+## Saved settings
+
+Watchlists and per-ticker chart settings are saved outside the app bundle:
+
+- macOS: `~/Library/Application Support/Columnist/settings.json`
+- Windows: `%APPDATA%\Columnist\settings.json`
+
+Existing settings from earlier `PnF Viewer` builds are loaded automatically.
 
 ## Keyboard shortcuts
 
@@ -59,7 +95,9 @@ No global package installs needed — the build script manages its own venv.
 pnf_viewer.py       Single-file app (Python server + embedded HTML/JS)
 icon.icns           macOS app icon
 build.sh            Build script for standalone .app
-PnF Viewer.spec     PyInstaller spec file
+build_windows.ps1   Build script for standalone Windows executable
+Columnist.spec      PyInstaller spec file
+assets/             README logo and icon source assets
 tools/              Support utilities outside the packaged viewer runtime
 ```
 

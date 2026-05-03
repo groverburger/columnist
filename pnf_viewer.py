@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PnF Viewer - Interactive Point-and-Figure Chart Explorer
+Columnist - Interactive Point-and-Figure Chart Explorer
 
 Usage:
     python pnf_viewer.py             # opens in native window (pywebview)
@@ -12,12 +12,14 @@ Requirements:
 
 import argparse
 import json
+import os
 import socket
 import threading
 import webbrowser
 import signal
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 
@@ -33,6 +35,74 @@ def find_free_port():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         return s.getsockname()[1]
+
+
+def get_settings_path():
+    if sys.platform == 'win32':
+        base = os.environ.get('APPDATA') or str(Path.home() / 'AppData' / 'Roaming')
+        return Path(base) / 'Columnist' / 'settings.json'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'Columnist' / 'settings.json'
+    base = os.environ.get('XDG_CONFIG_HOME') or str(Path.home() / '.config')
+    return Path(base) / 'columnist' / 'settings.json'
+
+
+def get_legacy_settings_path():
+    if sys.platform == 'win32':
+        base = os.environ.get('APPDATA') or str(Path.home() / 'AppData' / 'Roaming')
+        return Path(base) / 'PnF Viewer' / 'settings.json'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'PnF Viewer' / 'settings.json'
+    base = os.environ.get('XDG_CONFIG_HOME') or str(Path.home() / '.config')
+    return Path(base) / 'pnf-viewer' / 'settings.json'
+
+
+DEFAULT_SETTINGS = {
+    'version': 1,
+    'watchlists': [
+        {
+            'id': 'default',
+            'name': 'Default',
+            'symbols': ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'GLD', 'TLT', 'USO', 'BTC-USD'],
+            'readonly': True,
+        },
+    ],
+    'tickerSettings': {},
+}
+
+
+def read_settings():
+    path = get_settings_path()
+    legacy_path = get_legacy_settings_path()
+    settings = json.loads(json.dumps(DEFAULT_SETTINGS))
+    source_path = path if path.exists() else legacy_path
+    if source_path.exists():
+        try:
+            saved = json.loads(source_path.read_text(encoding='utf-8'))
+            if isinstance(saved, dict):
+                if isinstance(saved.get('watchlists'), list):
+                    settings['watchlists'] = saved['watchlists']
+                if isinstance(saved.get('tickerSettings'), dict):
+                    settings['tickerSettings'] = saved['tickerSettings']
+        except (OSError, json.JSONDecodeError):
+            pass
+    if not any(w.get('id') == 'default' for w in settings.get('watchlists', [])):
+        settings.setdefault('watchlists', []).insert(0, DEFAULT_SETTINGS['watchlists'][0])
+    settings['settingsPath'] = str(path)
+    return settings
+
+
+def write_settings(settings):
+    path = get_settings_path()
+    clean = {
+        'version': 1,
+        'watchlists': settings.get('watchlists', DEFAULT_SETTINGS['watchlists']),
+        'tickerSettings': settings.get('tickerSettings', {}),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(clean, indent=2, sort_keys=True), encoding='utf-8')
+    clean['settingsPath'] = str(path)
+    return clean
 
 
 def fetch_ohlc(ticker, start=None, end=None, period=None):
@@ -77,7 +147,7 @@ HTML_CONTENT = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>PnF Viewer</title>
+<title>Columnist</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',sans-serif;
@@ -109,11 +179,23 @@ canvas{display:block;position:absolute;top:0;left:0}
   font-size:15px;color:#787b86;z-index:10;pointer-events:none}
 .hidden{display:none!important}
 #main-area{flex:1;display:flex;overflow:hidden}
-#sidebar{width:175px;background:#1e222d;border-right:1px solid #2a2e39;
+#sidebar{width:245px;background:#1e222d;border-right:1px solid #2a2e39;
   overflow-y:auto;flex-shrink:0;font-size:12px}
 #sidebar::-webkit-scrollbar{width:5px}
 #sidebar::-webkit-scrollbar-track{background:transparent}
 #sidebar::-webkit-scrollbar-thumb{background:#363a45;border-radius:3px}
+.wl-panel{border-bottom:1px solid #2a2e39;padding-bottom:6px}
+.wl-head{padding:7px 8px 4px;display:flex;align-items:center;justify-content:space-between;
+  color:#d1d4dc;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
+.wl-head button,.wl-actions button,.mini-btn{padding:2px 6px;font-size:11px}
+.wl-tabs{display:flex;gap:4px;overflow-x:auto;padding:2px 8px 6px}
+.wl-tab{white-space:nowrap;padding:3px 7px;font-size:11px;color:#787b86}
+.wl-tab.active{background:#2962ff;border-color:#2962ff;color:#fff}
+.wl-actions{display:flex;gap:4px;padding:0 8px 6px}
+.wl-actions button{flex:1}
+.wl-meta{padding:0 9px 5px;color:#555b66;font-size:10px}
+.sb-library-title{padding:7px 10px;font-size:10px;font-weight:700;color:#787b86;
+  text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #2a2e39}
 .sb-cat{border-bottom:1px solid #2a2e39}
 .sb-cat-hdr{padding:6px 10px;font-size:10px;font-weight:700;color:#787b86;
   text-transform:uppercase;letter-spacing:.5px;cursor:pointer;display:flex;
@@ -122,13 +204,25 @@ canvas{display:block;position:absolute;top:0;left:0}
 .sb-cat-hdr .arrow{font-size:8px;transition:transform .15s}
 .sb-cat.collapsed .sb-cat-body{display:none}
 .sb-cat.collapsed .arrow{transform:rotate(-90deg)}
-.sb-item{padding:3px 10px;cursor:pointer;display:flex;justify-content:space-between;
-  align-items:center;color:#d1d4dc;transition:background .1s;font-size:12px}
+.sb-item{padding:3px 8px 3px 10px;cursor:pointer;display:grid;grid-template-columns:minmax(48px,max-content) minmax(0,1fr) 44px;
+  gap:6px;align-items:center;color:#d1d4dc;transition:background .1s;font-size:12px}
 .sb-item:hover{background:#2a2e39}
 .sb-item.active{background:rgba(41,98,255,0.13);color:#5b8def}
+.sb-item.wl-editable{grid-template-columns:minmax(48px,max-content) minmax(0,1fr) 20px 44px}
+.sb-item.dragging{opacity:.45}
+.sb-item.drag-over{box-shadow:inset 0 1px 0 #2962ff}
 .sb-item .tk{font-weight:500}
-.sb-item .desc{color:#555b66;font-size:10px;text-align:right;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;max-width:80px}
+.sb-item .desc{color:#555b66;font-size:10px;text-align:left;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.activity-badge{width:44px;justify-self:end;text-align:center;font-size:9px;font-weight:700;border-radius:3px;
+  padding:1px 3px;color:#fff;background:#363a45;line-height:14px;font-variant-numeric:tabular-nums}
+.activity-badge.up{background:#1d7d73}
+.activity-badge.down{background:#a43d3a}
+.activity-badge.rev{background:#8a63d2}
+.activity-badge.mixed{background:#9b6b25}
+.activity-badge.pending{background:#363a45;color:#9aa0aa}
+.remove-symbol{font-size:12px;color:#787b86;padding:0 4px;border:0;background:transparent;justify-self:center}
+.remove-symbol:hover{color:#ef5350;background:transparent}
 .sb-sub{padding:5px 10px 2px;font-size:9px;font-weight:700;color:#4a4e59;
   text-transform:uppercase;letter-spacing:.3px}
 </style>
@@ -138,6 +232,7 @@ canvas{display:block;position:absolute;top:0;left:0}
 <div id="toolbar">
   <input type="text" id="ticker-input" value="SPY" placeholder="Ticker" spellcheck="false">
   <button class="btn-primary" id="load-btn">Load</button>
+  <button id="add-watchlist-btn" title="Add the current ticker to the selected watchlist">Add to List</button>
   <div class="sep"></div>
   <label>Box%</label>
   <select id="box-size-select">
@@ -217,12 +312,102 @@ let isDragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY
 let mouseX = -1, mouseY = -1;
 let isLoading = false;
 let activePeriod = '2y';
-let tickerBoxSizes = {};
-try { tickerBoxSizes = JSON.parse(localStorage.getItem('pnfBoxSizes')) || {}; } catch(e) {}
+let appSettings = { version: 1, watchlists: [], tickerSettings: {} };
+let selectedWatchlistId = 'default';
+let activityByTicker = {};
+let activityScanToken = 0;
+let collapsedCats = new Set();
+let draggedWatchlistIndex = null;
+let suppressTickerClickUntil = 0;
 
 const canvas = document.getElementById('chart');
 const ctx = canvas.getContext('2d');
 let dpr = 1, canvasW = 0, canvasH = 0;
+
+// ============================== SETTINGS ==============================
+function normalizeTicker(t) {
+  return (t || '').trim().toUpperCase();
+}
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+function defaultWatchlist() {
+  return {
+    id: 'default',
+    name: 'Default',
+    symbols: ['SPY', 'QQQ', 'DIA', 'IWM', 'VTI', 'GLD', 'TLT', 'USO', 'BTC-USD'],
+    readonly: true
+  };
+}
+function ensureSettingsShape() {
+  if (!appSettings || typeof appSettings !== 'object') appSettings = {};
+  if (!Array.isArray(appSettings.watchlists)) appSettings.watchlists = [defaultWatchlist()];
+  if (!appSettings.watchlists.some(w => w.id === 'default')) appSettings.watchlists.unshift(defaultWatchlist());
+  appSettings.watchlists = appSettings.watchlists.map((w, i) => ({
+    id: w.id || ('wl-' + i),
+    name: w.name || 'Watchlist',
+    symbols: Array.isArray(w.symbols) ? Array.from(new Set(w.symbols.map(normalizeTicker).filter(Boolean))) : [],
+    readonly: !!w.readonly
+  }));
+  const def = appSettings.watchlists.find(w => w.id === 'default');
+  if (def) {
+    def.name = def.name || 'Default';
+    def.readonly = true;
+    if (!def.symbols.length) def.symbols = defaultWatchlist().symbols;
+  }
+  if (!appSettings.tickerSettings || typeof appSettings.tickerSettings !== 'object') appSettings.tickerSettings = {};
+}
+async function loadSettings() {
+  try {
+    const resp = await fetch('/api/settings');
+    appSettings = await resp.json();
+  } catch(e) {
+    appSettings = { version: 1, watchlists: [defaultWatchlist()], tickerSettings: {} };
+  }
+  ensureSettingsShape();
+  migrateLocalBoxSizes();
+}
+function migrateLocalBoxSizes() {
+  try {
+    const old = JSON.parse(localStorage.getItem('pnfBoxSizes')) || {};
+    let changed = false;
+    for (const [ticker, boxSize] of Object.entries(old)) {
+      const key = normalizeTicker(ticker);
+      if (!appSettings.tickerSettings[key]) appSettings.tickerSettings[key] = {};
+      if (!appSettings.tickerSettings[key].boxSize) {
+        appSettings.tickerSettings[key].boxSize = String(boxSize);
+        changed = true;
+      }
+    }
+    if (changed) saveSettings();
+  } catch(e) {}
+}
+function saveSettings() {
+  ensureSettingsShape();
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(appSettings)
+  }).catch(() => {});
+}
+function getTickerSettings(ticker) {
+  const key = normalizeTicker(ticker);
+  if (!appSettings.tickerSettings[key]) appSettings.tickerSettings[key] = {};
+  return appSettings.tickerSettings[key];
+}
+function saveCurrentTickerSettings() {
+  if (!currentTicker) return;
+  const settings = getTickerSettings(currentTicker);
+  settings.boxSize = document.getElementById('box-size-select').value;
+  settings.reversal = document.getElementById('reversal-select').value;
+  saveSettings();
+}
+function getWatchlist(id) {
+  ensureSettingsShape();
+  return appSettings.watchlists.find(w => w.id === id) || appSettings.watchlists[0];
+}
 
 // ============================== PNF ALGORITHM ==============================
 function round4(x) { return Math.round(x * 10000) / 10000; }
@@ -276,6 +461,54 @@ function generatePnF(data, bs, rs) {
     }
   }
   return { columns: cols, boxDates: bxDates, columnDates: dates, columnDirections: dirs };
+}
+
+function pruneEmptyColumns(p) {
+  if (!p) return p;
+  while (p.columns.length > 0 && p.columns[p.columns.length-1].length === 0) {
+    p.columns.pop(); p.boxDates.pop(); p.columnDates.pop(); p.columnDirections.pop();
+  }
+  return p;
+}
+
+function analyzeDailyActivity(data, ticker) {
+  if (!data || data.length === 0) return null;
+  const settings = getTickerSettings(ticker);
+  const bs = parseFloat(settings.boxSize || '0.01');
+  const rs = parseInt(settings.reversal || '3');
+  const p = pruneEmptyColumns(generatePnF(data, bs, rs));
+  if (!p || p.columns.length === 0) return null;
+
+  const latestDate = data[data.length - 1].date;
+  let count = 0;
+  let up = 0;
+  let down = 0;
+  let lastDir = '';
+  let columnChanged = false;
+
+  for (let ci = 0; ci < p.columns.length; ci++) {
+    if (ci > 0 && p.columnDates[ci] === latestDate) columnChanged = true;
+    const dir = p.columnDirections[ci];
+    const dates = p.boxDates[ci] || [];
+    for (let bi = 0; bi < dates.length; bi++) {
+      if (dates[bi] !== latestDate) continue;
+      count++;
+      lastDir = dir;
+      if (dir === 'up') up++; else down++;
+    }
+  }
+  if (count === 0 && !columnChanged) return null;
+
+  const dirLabel = lastDir === 'up' ? 'X' : 'O';
+  const mixed = up > 0 && down > 0;
+  const label = columnChanged
+    ? 'REV ' + dirLabel
+    : mixed ? count + 'x' : (count > 1 ? count : '') + dirLabel;
+  const className = columnChanged ? 'rev' : mixed ? 'mixed' : lastDir === 'up' ? 'up' : 'down';
+  const title = columnChanged
+    ? 'Column changed on ' + latestDate + ' with ' + count + ' new ' + dirLabel + (count === 1 ? '' : 's')
+    : count + ' new ' + dirLabel + (count === 1 ? '' : 's') + ' on ' + latestDate;
+  return { label, className, title, date: latestDate, count, columnChanged };
 }
 
 // ============================== ROW MATH ==============================
@@ -792,17 +1025,21 @@ async function loadData(ticker, opts) {
     if (ohlcData.length > 0) lastClose = ohlcData[ohlcData.length - 1].close;
     // Sync sidebar highlight
     document.querySelectorAll('.sb-item.active').forEach(e => e.classList.remove('active'));
-    const match = document.querySelector('.sb-item[data-ticker="'+currentTicker+'"]');
-    if (match) match.classList.add('active');
-    // Restore per-ticker box size (default to 1% if none saved)
-    const sel = document.getElementById('box-size-select');
-    const savedBs = tickerBoxSizes[currentTicker];
-    const opts = Array.from(sel.options).map(o => o.value);
-    if (savedBs && opts.indexOf(savedBs) >= 0) {
-      sel.value = savedBs;
+    document.querySelectorAll('.sb-item[data-ticker]').forEach(el => {
+      if (normalizeTicker(el.dataset.ticker) === currentTicker) el.classList.add('active');
+    });
+    // Restore per-ticker settings (default to 1% x 3 if none saved)
+    const boxSel = document.getElementById('box-size-select');
+    const revSel = document.getElementById('reversal-select');
+    const saved = getTickerSettings(currentTicker);
+    const boxOptions = Array.from(boxSel.options).map(o => o.value);
+    const revOptions = Array.from(revSel.options).map(o => o.value);
+    if (saved.boxSize && boxOptions.indexOf(saved.boxSize) >= 0) {
+      boxSel.value = saved.boxSize;
     } else {
-      sel.value = '0.01';
+      boxSel.value = '0.01';
     }
+    revSel.value = saved.reversal && revOptions.indexOf(saved.reversal) >= 0 ? saved.reversal : '3';
     recalcPnF();
   } catch (err) {
     alert('Fetch error: ' + err.message);
@@ -818,13 +1055,13 @@ function recalcPnF() {
   if (ohlcData.length === 0) return;
   const bs = parseFloat(document.getElementById('box-size-select').value);
   const rs = parseInt(document.getElementById('reversal-select').value);
-  pnf = generatePnF(ohlcData, bs, rs);
+  pnf = pruneEmptyColumns(generatePnF(ohlcData, bs, rs));
   if (pnf) {
-    // Remove empty trailing columns
-    while (pnf.columns.length > 0 && pnf.columns[pnf.columns.length-1].length === 0) {
-      pnf.columns.pop(); pnf.boxDates.pop(); pnf.columnDates.pop(); pnf.columnDirections.pop();
-    }
     rowInfo = computeRowInfo(pnf, bs);
+  }
+  if (currentTicker) {
+    activityByTicker[currentTicker] = analyzeDailyActivity(ohlcData, currentTicker);
+    buildSidebar();
   }
   autoFit();
 }
@@ -864,13 +1101,13 @@ function setupUI() {
 
   // Box size / reversal change → recalc
   document.getElementById('box-size-select').addEventListener('change', () => {
-    if (currentTicker) {
-      tickerBoxSizes[currentTicker] = document.getElementById('box-size-select').value;
-      try { localStorage.setItem('pnfBoxSizes', JSON.stringify(tickerBoxSizes)); } catch(e) {}
-    }
+    saveCurrentTickerSettings();
     recalcPnF();
   });
-  document.getElementById('reversal-select').addEventListener('change', recalcPnF);
+  document.getElementById('reversal-select').addEventListener('change', () => {
+    saveCurrentTickerSettings();
+    recalcPnF();
+  });
 
   // Period presets
   document.querySelectorAll('.preset-btn').forEach(btn => {
@@ -887,6 +1124,7 @@ function setupUI() {
 
   // Reset view
   document.getElementById('reset-btn').addEventListener('click', autoFit);
+  document.getElementById('add-watchlist-btn').addEventListener('click', addCurrentTickerToWatchlist);
 
   // Canvas events
   canvas.addEventListener('mousedown', onMouseDown);
@@ -979,15 +1217,55 @@ const SIDEBAR_DATA = [
 function buildSidebar() {
   const sb = document.getElementById('sidebar');
   let html = '';
+  const selected = getWatchlist(selectedWatchlistId);
+
+  html += '<div class="wl-panel">';
+  html += '<div class="wl-head"><span>Watchlists</span><button onclick="createWatchlist()" title="Create watchlist">+</button></div>';
+  html += '<div class="wl-tabs">';
+  for (const wl of appSettings.watchlists) {
+    html += '<button class="wl-tab' + (wl.id === selected.id ? ' active' : '') + '" onclick="selectWatchlist(\'' +
+      escapeHtml(wl.id) + '\')">' + escapeHtml(wl.name) + '</button>';
+  }
+  html += '</div>';
+  html += '<div class="wl-actions">';
+  html += '<button onclick="addCurrentTickerToWatchlist()">Add Current</button>';
+  html += '<button onclick="refreshSelectedWatchlistActivity()">Scan</button>';
+  if (!selected.readonly) {
+    html += '<button onclick="renameWatchlist()">Rename</button><button onclick="deleteWatchlist()">Delete</button>';
+  }
+  html += '</div>';
+  html += '<div class="wl-meta">' + escapeHtml(selected.symbols.length) + ' symbols';
+  const pendingCount = selected.symbols.filter(t => activityByTicker[normalizeTicker(t)] === 'pending').length;
+  if (pendingCount) html += ' · scanning ' + pendingCount;
+  html += '</div>';
+  for (const ticker of selected.symbols) {
+    const tk = normalizeTicker(ticker);
+    const i = selected.symbols.indexOf(ticker);
+    html += '<div class="sb-item wl-symbol' + (selected.readonly ? '' : ' wl-editable') + '" data-ticker="' + escapeHtml(tk) + '" data-watchlist-index="' + i + '"' +
+      (selected.readonly ? '' : ' draggable="true" ondragstart="onWatchlistDragStart(event)" ondragover="onWatchlistDragOver(event)" ondragleave="onWatchlistDragLeave(event)" ondrop="onWatchlistDrop(event)" ondragend="onWatchlistDragEnd(event)"') +
+      ' onclick="clickTicker(this)">' +
+      '<span class="tk">' + escapeHtml(tk) + '</span><span class="desc"></span>';
+    if (selected.readonly) {
+      html += activityBadgeHtml(tk);
+    } else {
+      html += '<button class="remove-symbol" onclick="removeTickerFromWatchlist(event,\'' +
+        escapeHtml(tk) + '\')" title="Remove">×</button>' + activityBadgeHtml(tk);
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  html += '<div class="sb-library-title">Symbol Library</div>';
+
   for (const sec of SIDEBAR_DATA) {
-    html += '<div class="sb-cat">';
+    const catId = sec.cat;
+    html += '<div class="sb-cat' + (collapsedCats.has(catId) ? ' collapsed' : '') + '" data-cat="' + escapeHtml(catId) + '">';
     html += '<div class="sb-cat-hdr" onclick="toggleCat(this)">' +
       sec.cat + '<span class="arrow">&#9660;</span></div>';
     html += '<div class="sb-cat-body">';
     if (sec.items) {
       for (const t of sec.items) {
         html += '<div class="sb-item" data-ticker="'+t[0]+'" onclick="clickTicker(this)">' +
-          '<span class="tk">'+t[0]+'</span><span class="desc">'+t[1]+'</span></div>';
+          '<span class="tk">'+t[0]+'</span><span class="desc">'+t[1]+'</span>' + activityBadgeHtml(t[0]) + '</div>';
       }
     }
     if (sec.sub) {
@@ -995,20 +1273,174 @@ function buildSidebar() {
         html += '<div class="sb-sub">' + subName + '</div>';
         for (const t of tickers) {
           html += '<div class="sb-item" data-ticker="'+t[0]+'" onclick="clickTicker(this)">' +
-            '<span class="tk">'+t[0]+'</span><span class="desc">'+t[1]+'</span></div>';
+            '<span class="tk">'+t[0]+'</span><span class="desc">'+t[1]+'</span>' + activityBadgeHtml(t[0]) + '</div>';
         }
       }
     }
     html += '</div></div>';
   }
   sb.innerHTML = html;
+  if (currentTicker) {
+    document.querySelectorAll('.sb-item[data-ticker]').forEach(el => {
+      if (normalizeTicker(el.dataset.ticker) === currentTicker) el.classList.add('active');
+    });
+  }
+}
+
+function activityBadgeHtml(ticker) {
+  const activity = activityByTicker[normalizeTicker(ticker)];
+  if (activity === 'pending') {
+    return '<span class="activity-badge pending" title="Scanning">…</span>';
+  }
+  if (!activity) return '<span class="activity-badge" title="No scanned activity today">-</span>';
+  return '<span class="activity-badge ' + activity.className + '" title="' +
+    escapeHtml(activity.title) + '">' + escapeHtml(activity.label) + '</span>';
+}
+
+function selectWatchlist(id) {
+  selectedWatchlistId = id;
+  buildSidebar();
+  refreshSelectedWatchlistActivity();
+}
+
+function createWatchlist() {
+  const name = prompt('Watchlist name');
+  if (!name || !name.trim()) return;
+  const id = 'wl-' + Date.now().toString(36);
+  appSettings.watchlists.push({ id, name: name.trim(), symbols: [], readonly: false });
+  selectedWatchlistId = id;
+  saveSettings();
+  buildSidebar();
+}
+
+function renameWatchlist() {
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || wl.readonly) return;
+  const name = prompt('Watchlist name', wl.name);
+  if (!name || !name.trim()) return;
+  wl.name = name.trim();
+  saveSettings();
+  buildSidebar();
+}
+
+function deleteWatchlist() {
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || wl.readonly) return;
+  if (!confirm('Delete "' + wl.name + '"?')) return;
+  appSettings.watchlists = appSettings.watchlists.filter(w => w.id !== wl.id);
+  selectedWatchlistId = 'default';
+  saveSettings();
+  buildSidebar();
+}
+
+function addCurrentTickerToWatchlist() {
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || wl.readonly) {
+    alert('Create or select a custom watchlist first.');
+    return;
+  }
+  const ticker = normalizeTicker(document.getElementById('ticker-input').value || currentTicker);
+  if (!ticker) return;
+  if (!wl.symbols.map(normalizeTicker).includes(ticker)) wl.symbols.push(ticker);
+  saveSettings();
+  buildSidebar();
+  refreshSelectedWatchlistActivity();
+}
+
+function removeTickerFromWatchlist(event, ticker) {
+  event.stopPropagation();
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || wl.readonly) return;
+  wl.symbols = wl.symbols.filter(t => normalizeTicker(t) !== normalizeTicker(ticker));
+  saveSettings();
+  buildSidebar();
+}
+
+function onWatchlistDragStart(event) {
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || wl.readonly) return;
+  draggedWatchlistIndex = parseInt(event.currentTarget.dataset.watchlistIndex, 10);
+  event.currentTarget.classList.add('dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', String(draggedWatchlistIndex));
+}
+
+function onWatchlistDragOver(event) {
+  if (draggedWatchlistIndex === null) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  event.currentTarget.classList.add('drag-over');
+}
+
+function onWatchlistDragLeave(event) {
+  event.currentTarget.classList.remove('drag-over');
+}
+
+function onWatchlistDrop(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || wl.readonly || draggedWatchlistIndex === null) return;
+  const targetIndex = parseInt(event.currentTarget.dataset.watchlistIndex, 10);
+  if (!Number.isInteger(targetIndex) || targetIndex === draggedWatchlistIndex) {
+    onWatchlistDragEnd(event);
+    return;
+  }
+  const symbols = wl.symbols.slice();
+  const moved = symbols.splice(draggedWatchlistIndex, 1)[0];
+  symbols.splice(targetIndex, 0, moved);
+  wl.symbols = symbols;
+  draggedWatchlistIndex = null;
+  suppressTickerClickUntil = Date.now() + 250;
+  saveSettings();
+  buildSidebar();
+}
+
+function onWatchlistDragEnd(event) {
+  draggedWatchlistIndex = null;
+  suppressTickerClickUntil = Date.now() + 250;
+  document.querySelectorAll('.wl-symbol.dragging,.wl-symbol.drag-over').forEach(el => {
+    el.classList.remove('dragging', 'drag-over');
+  });
+}
+
+function refreshSelectedWatchlistActivity() {
+  const wl = getWatchlist(selectedWatchlistId);
+  if (!wl || !wl.symbols.length) return;
+  refreshWatchlistActivity(wl.symbols);
+}
+
+async function refreshWatchlistActivity(symbols) {
+  const token = ++activityScanToken;
+  const uniqueSymbols = Array.from(new Set(symbols.map(normalizeTicker).filter(Boolean)));
+  uniqueSymbols.forEach(t => { activityByTicker[t] = 'pending'; });
+  buildSidebar();
+  for (const ticker of uniqueSymbols) {
+    if (token !== activityScanToken) return;
+    try {
+      const resp = await fetch('/api/ohlc?ticker=' + encodeURIComponent(ticker) + '&period=2y');
+      const json = await resp.json();
+      activityByTicker[ticker] = json.error ? null : analyzeDailyActivity(json.data, ticker);
+    } catch(e) {
+      activityByTicker[ticker] = null;
+    }
+    buildSidebar();
+  }
 }
 
 function toggleCat(hdr) {
+  const cat = hdr.parentElement.dataset.cat;
   hdr.parentElement.classList.toggle('collapsed');
+  if (!cat) return;
+  if (hdr.parentElement.classList.contains('collapsed')) {
+    collapsedCats.add(cat);
+  } else {
+    collapsedCats.delete(cat);
+  }
 }
 
 function clickTicker(el) {
+  if (Date.now() < suppressTickerClickUntil) return;
   const ticker = el.dataset.ticker;
   document.getElementById('ticker-input').value = ticker;
   // Highlight active
@@ -1025,13 +1457,15 @@ function clickTicker(el) {
 }
 
 // ============================== INIT ==============================
-function init() {
+async function init() {
+  await loadSettings();
   buildSidebar();
   resizeCanvas();
   setupUI();
   render();
   // Auto-load SPY on startup & highlight it
   loadData('SPY', { period: '2y' });
+  refreshSelectedWatchlistActivity();
   const spyEl = document.querySelector('.sb-item[data-ticker="SPY"]');
   if (spyEl) spyEl.classList.add('active');
 }
@@ -1045,6 +1479,14 @@ window.addEventListener('DOMContentLoaded', init);
 class PnFHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
+
+    def send_json(self, payload, status=200):
+        body = json.dumps(payload).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -1065,19 +1507,30 @@ class PnFHandler(BaseHTTPRequestHandler):
                 result = fetch_ohlc(ticker, start=start, end=end, period=period)
             except Exception as e:
                 result = {'error': str(e)}
-            body = json.dumps(result).encode('utf-8')
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.send_json(result)
+        elif parsed.path == '/api/settings':
+            self.send_json(read_settings())
         else:
             self.send_response(404)
             self.end_headers()
 
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != '/api/settings':
+            self.send_response(404)
+            self.end_headers()
+            return
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            raw = self.rfile.read(length).decode('utf-8') if length else '{}'
+            payload = json.loads(raw)
+            self.send_json(write_settings(payload))
+        except Exception as e:
+            self.send_json({'error': str(e)}, status=400)
+
 
 def main():
-    parser = argparse.ArgumentParser(description='PnF Viewer - Interactive Point-and-Figure Chart Explorer')
+    parser = argparse.ArgumentParser(description='Columnist - Interactive Point-and-Figure Chart Explorer')
     parser.add_argument('--browser', action='store_true',
                         help='Open in default browser instead of native window')
     args = parser.parse_args()
@@ -1089,7 +1542,7 @@ def main():
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
 
-    print(f'PnF Viewer running at {url}')
+    print(f'Columnist running at {url}')
 
     if args.browser:
         webbrowser.open(url)
@@ -1101,7 +1554,7 @@ def main():
     else:
         try:
             import webview
-            webview.create_window('PnF Viewer', url, width=1400, height=900)
+            webview.create_window('Columnist', url, width=1400, height=900)
             webview.start()
         except ImportError:
             print('pywebview not found, falling back to browser (pip install pywebview)')

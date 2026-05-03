@@ -1,6 +1,6 @@
 # Tools
 
-This folder contains support utilities that are useful around the PnF Viewer
+This folder contains support utilities that are useful around the Columnist
 project but are not part of the viewer runtime or packaged desktop app.
 
 ## `pnf_columns.py`
