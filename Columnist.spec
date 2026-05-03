@@ -7,10 +7,14 @@ icon = 'icon.icns' if sys.platform == 'darwin' else None
 
 
 a = Analysis(
-    ['pnf_viewer.py'],
+    ['columnist.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('index.html', '.'),
+        ('style.css', '.'),
+        ('js', 'js'),
+    ],
     hiddenimports=['webview', 'yfinance', 'pandas', 'requests', 'certifi'],
     hookspath=[],
     hooksconfig={},

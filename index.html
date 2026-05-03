@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Columnist</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div id="toolbar">
+  <input type="text" id="ticker-input" value="SPY" placeholder="Ticker" spellcheck="false">
+  <button class="btn-primary" id="load-btn">Load</button>
+  <button id="add-watchlist-btn" title="Add the current ticker to the selected watchlist">Add to List</button>
+  <div class="sep"></div>
+  <label>Box%</label>
+  <select id="box-size-select">
+    <option value="0.0025">0.25%</option>
+    <option value="0.005">0.50%</option>
+    <option value="0.0075">0.75%</option>
+    <option value="0.01" selected>1.00%</option>
+    <option value="0.015">1.50%</option>
+    <option value="0.02">2.00%</option>
+    <option value="0.03">3.00%</option>
+    <option value="0.05">5.00%</option>
+  </select>
+  <label>Rev</label>
+  <select id="reversal-select">
+    <option value="1">1</option>
+    <option value="2">2</option>
+    <option value="3" selected>3</option>
+    <option value="4">4</option>
+    <option value="5">5</option>
+  </select>
+  <div class="sep"></div>
+  <button class="preset-btn" data-period="1y">1Y</button>
+  <button class="preset-btn active" data-period="2y">2Y</button>
+  <button class="preset-btn" data-period="3y">3Y</button>
+  <button class="preset-btn" data-period="5y">5Y</button>
+  <button class="preset-btn" data-period="10y">10Y</button>
+  <button class="preset-btn" data-period="max">Max</button>
+  <div class="sep"></div>
+  <label>From</label>
+  <input type="date" class="date-input" id="start-date">
+  <label>To</label>
+  <input type="date" class="date-input" id="end-date">
+  <div class="sep"></div>
+  <button id="reset-btn" title="Reset view (R)">Reset View</button>
+</div>
+
+<div id="main-area">
+<div id="sidebar"></div>
+<div id="chart-container">
+  <canvas id="chart"></canvas>
+  <div id="loading-overlay" class="hidden">Loading&hellip;</div>
+</div>
+</div>
+
+<div id="statusbar">
+  <span id="sb-info">Enter a ticker and click Load</span>
+  <span id="sb-hover"></span>
+</div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

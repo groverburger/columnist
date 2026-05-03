@@ -23,8 +23,8 @@ Requires Python 3.10+.
 
 ```bash
 pip install yfinance pywebview
-python pnf_viewer.py             # native window (pywebview)
-python pnf_viewer.py --browser   # opens in default browser
+python columnist.py             # native window (pywebview)
+python columnist.py --browser   # opens in default browser
 ```
 
 `pywebview` is optional — if not installed, the app automatically falls back to the browser.
@@ -92,7 +92,10 @@ Existing settings from earlier `PnF Viewer` builds are loaded automatically.
 ## Project structure
 
 ```
-pnf_viewer.py       Single-file app (Python server + embedded HTML/JS)
+columnist.py        Tiny Python server, JSON API, and desktop/browser launcher
+index.html          Static app shell
+style.css           App styling
+js/app.js           Vanilla JavaScript app logic
 icon.icns           macOS app icon
 build.sh            Build script for standalone .app
 build_windows.ps1   Build script for standalone Windows executable

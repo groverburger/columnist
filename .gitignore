@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .DS_Store
 assets/icon-iterations/icon-tweaker-export.*
+assets/icon-iterations/
