@@ -1171,6 +1171,23 @@ function clickTicker(el) {
   }
 }
 
+Object.assign(window, {
+  addCurrentTickerToWatchlist,
+  clickTicker,
+  createWatchlist,
+  deleteWatchlist,
+  onWatchlistDragEnd,
+  onWatchlistDragLeave,
+  onWatchlistDragOver,
+  onWatchlistDragStart,
+  onWatchlistDrop,
+  refreshSelectedWatchlistActivity,
+  removeTickerFromWatchlist,
+  renameWatchlist,
+  selectWatchlist,
+  toggleCat,
+});
+
 // ============================== INIT ==============================
 async function init() {
   await loadSettings();
